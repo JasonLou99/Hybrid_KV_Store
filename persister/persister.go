@@ -1,7 +1,6 @@
 package persister
 
 import (
-	"fmt"
 	"hybrid_kv_store/util"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -15,7 +14,6 @@ type Persister struct {
 func (p *Persister) Init(path string) {
 	var err error
 	//数据存储路径和一些初始文件
-	fmt.Println(path)
 	p.db, err = leveldb.OpenFile(path, nil)
 	if err != nil {
 		util.EPrintf("Open db failed, err: %s", err)

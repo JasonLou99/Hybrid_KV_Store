@@ -31,6 +31,13 @@ func IPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
+func FPrintf(format string, a ...interface{}) (n int, err error) {
+	log.SetPrefix("[Fatalf] ")
+	log.SetFlags(log.Ldate | log.Lmicroseconds)
+	log.Printf(format, a...)
+	return
+}
+
 /*
 sync.Map 相关的函数
 */
@@ -65,6 +72,7 @@ func IsUpper(vectorClock sync.Map, vc sync.Map) bool {
 		return true
 	}
 	if Len(vectorClock) < Len(vc) {
+		DPrintf("vectorClock's length is shorter")
 		return false
 	} else {
 		res := true

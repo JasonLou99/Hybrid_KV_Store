@@ -7,7 +7,6 @@ package lattices
 import (
 	config "hybrid_kv_store/config"
 	"hybrid_kv_store/util"
-	"sync"
 )
 
 // Lattice接口，用来实现Merge方法的多态
@@ -22,38 +21,37 @@ type Lattice interface {
 
 // 基于VectorClock实现的ValueLattice
 type ValueLattice struct {
-	value config.Log
-
+	Log config.Log
 	// Vector Clock
-	vectorClock sync.Map
+	VectorClock map[string]int32
 }
 
 type MapLattice struct {
-	key string
-	vl  ValueLattice
+	Key string
+	Vl  ValueLattice
 }
 
 func (vl ValueLattice) Reveal() config.Log {
-	return vl.value
+	return vl.Log
 }
 
 func (vl *ValueLattice) Merge(other ValueLattice) {
 	// 根据vectorClock决定合并策略
-	if util.IsUpper(other.vectorClock, vl.vectorClock) {
+	if util.IsUpper(util.BecomeSyncMap(other.VectorClock), util.BecomeSyncMap(vl.VectorClock)) {
 		// other >= vl
 		// vl.value = other.value
-		vl.vectorClock = other.vectorClock
+		vl.VectorClock = other.VectorClock
 	}
 }
 
 func (ml MapLattice) Reveal() config.Log {
-	return ml.vl.value
+	return ml.Vl.Log
 }
 
 func (ml *MapLattice) Merge(other MapLattice) {
-	if util.IsUpper(other.vl.vectorClock, ml.vl.vectorClock) {
+	if util.IsUpper(util.BecomeSyncMap(other.Vl.VectorClock), util.BecomeSyncMap(ml.Vl.VectorClock)) {
 		// other >= vl
 		// ml.vl.value = other.vl.value
-		ml.vl.vectorClock = other.vl.vectorClock
+		ml.Vl.VectorClock = other.Vl.VectorClock
 	}
 }
