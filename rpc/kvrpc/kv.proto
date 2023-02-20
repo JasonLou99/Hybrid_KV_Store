@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+option go_package="./;kvproto";
+
+service KV{
+    rpc GetInCasual (GetInCasualRequest) returns (GetInCasualResponse) {}
+    rpc PutInCasual (PutInCasualRequest) returns (PutInCasualResponse) {}
+}
+
+message GetInCasualRequest {
+    string key = 1;
+    map<string,int32> vectorclock = 2;
+}
+
+message GetInCasualResponse {
+    string value = 1;
+    map<string,int32> vectorclock = 2;
+    bool success = 3;
+}
+
+message PutInCasualRequest {
+    string key = 1;
+    string value = 2;
+    map<string,int32> vectorclock = 3;
+}
+
+message PutInCasualResponse {
+    bool success = 1;
+    map<string,int32> vectorclock = 2;
+}

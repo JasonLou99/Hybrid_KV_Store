@@ -1,5 +1,9 @@
 package lattices
 
+/*
+	Lattice结构，kvs间传输的数据结构
+*/
+
 import (
 	config "hybrid_kv_store/config"
 	"hybrid_kv_store/util"

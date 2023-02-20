@@ -10,9 +10,24 @@ const Debug = true
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {
+		log.SetPrefix("[Debug] ")
 		log.SetFlags(log.Ldate | log.Lmicroseconds)
 		log.Printf(format, a...)
 	}
+	return
+}
+
+func EPrintf(format string, a ...interface{}) (n int, err error) {
+	log.SetPrefix("[Error] ")
+	log.SetFlags(log.Ldate | log.Lmicroseconds)
+	log.Printf(format, a...)
+	return
+}
+
+func IPrintf(format string, a ...interface{}) (n int, err error) {
+	log.SetPrefix("[Info] ")
+	log.SetFlags(log.Ldate | log.Lmicroseconds)
+	log.Printf(format, a...)
 	return
 }
 

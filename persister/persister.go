@@ -2,7 +2,7 @@ package persister
 
 import (
 	"fmt"
-	"log"
+	"hybrid_kv_store/util"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -18,18 +18,21 @@ func (p *Persister) Init(path string) {
 	fmt.Println(path)
 	p.db, err = leveldb.OpenFile(path, nil)
 	if err != nil {
-		log.Fatalln(err)
+		util.EPrintf("Open db failed, err: %s", err)
 	}
 }
 
 func (p *Persister) Put(key string, value string) {
-	p.db.Put([]byte(key), []byte(value), nil)
+	err := p.db.Put([]byte(key), []byte(value), nil)
+	if err != nil {
+		util.EPrintf("Put key %s value %s failed, err: %s", key, value, err)
+	}
 }
 
 func (p *Persister) Get(key string) []byte {
 	value, err := p.db.Get([]byte(key), nil)
 	if err != nil {
-		log.Println(err)
+		util.EPrintf("Get key %s failed, err: %s", key, err)
 		return nil
 	}
 	return value
