@@ -14,6 +14,7 @@ service KV{
 message GetInCasualRequest {
   string key = 1;
   map<string,int32> vectorclock = 2;
+  int64 timestamp = 3;
 }
 
 message GetInCasualResponse {
@@ -26,6 +27,7 @@ message PutInCasualRequest {
   string key = 1;
   string value = 2;
   map<string,int32> vectorclock = 3;
+  int64 timestamp = 4;
 }
 
 message PutInCasualResponse {

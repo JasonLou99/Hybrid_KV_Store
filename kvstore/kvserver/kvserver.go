@@ -30,12 +30,17 @@ type KVServer struct {
 	logs            []config.Log
 	vectorclock     sync.Map
 	persister       *persister.Persister
-
+	db              sync.Map // memory database
 	// causalEntity *causal.CausalEntity
 }
 
-// // this method is used to execute the command from client with causal consistency
-func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[string]int32) bool {
+type ValueTimestamp struct {
+	value     string
+	timestamp int64
+}
+
+// this method is used to execute the command from client with causal consistency
+func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[string]int32, timestampFromClient int64) bool {
 	vcFromClient := util.BecomeSyncMap(vcFromClientArg)
 	newLog := command.(config.Log)
 	util.DPrintf("Log in Start(): %v ", newLog)
@@ -43,6 +48,14 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 	if newLog.Option == "Put" {
 		isUpper := util.IsUpper(vcFromClient, kvs.vectorclock)
 		if isUpper {
+			vt, ok := kvs.db.Load(newLog.Key)
+			vt2 := vt.(ValueTimestamp)
+			if ok && vt2.timestamp > timestampFromClient {
+				// the value in the db is newer than the value in the client
+				return false
+			}
+			// update vector clock
+			kvs.vectorclock = vcFromClient
 			val, _ := kvs.vectorclock.Load(kvs.internalAddress)
 			kvs.vectorclock.Store(kvs.internalAddress, val.(int32)+1)
 			// init MapLattice for sending to other nodes
@@ -63,10 +76,10 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 					go kvs.sendAppendEntriesInCausal(kvs.peers[i], args)
 				}
 			}
+			// update value in the db and persist
 			kvs.logs = append(kvs.logs, newLog)
+			kvs.db.Store(newLog.Key, &ValueTimestamp{value: newLog.Value, timestamp: time.Now().UnixMilli()})
 			kvs.persister.Put(newLog.Key, newLog.Value)
-			// kvs.applyCh <- 1
-			// util.DPrintf("applyCh unread buffer: %v", len(ce.applyCh))
 			return true
 		} else {
 			return false
@@ -80,22 +93,62 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 
 func (kvs *KVServer) GetInCasual(ctx context.Context, in *kvrpc.GetInCasualRequest) (*kvrpc.GetInCasualResponse, error) {
 	util.DPrintf("GetInCasual %s", in.Key)
-	// getInCausalResponse := new(kvrpc.GetInCasualResponse)
-	// op := config.Log{
-	// 	Option: "get",
-	// 	Key:    in.Key,
-	// 	Value:  "",
-	// }
-
-	return &kvrpc.GetInCasualResponse{}, nil
+	getInCausalResponse := new(kvrpc.GetInCasualResponse)
+	op := config.Log{
+		Option: "Get",
+		Key:    in.Key,
+		Value:  "",
+	}
+	ok := kvs.startInCausal(op, in.Vectorclock, in.Timestamp)
+	if ok {
+		vt, _ := kvs.db.Load(in.Key)
+		valueTimestamp := vt.(*ValueTimestamp)
+		// compare timestamp
+		if valueTimestamp.timestamp > in.Timestamp {
+			getInCausalResponse.Value = ""
+			getInCausalResponse.Success = false
+		}
+		// getInCausalResponse.Value = string(kvs.persister.Get(in.Key))
+		getInCausalResponse.Value = valueTimestamp.value
+		getInCausalResponse.Success = true
+	} else {
+		getInCausalResponse.Value = ""
+		getInCausalResponse.Success = false
+	}
+	return getInCausalResponse, nil
 }
 
 func (kvs *KVServer) PutInCasual(ctx context.Context, in *kvrpc.PutInCasualRequest) (*kvrpc.PutInCasualResponse, error) {
-	return &kvrpc.PutInCasualResponse{}, nil
+	util.DPrintf("PutInCasual %s %s", in.Key, in.Value)
+	putInCausalResponse := new(kvrpc.PutInCasualResponse)
+	op := config.Log{
+		Option: "Put",
+		Key:    in.Key,
+		Value:  in.Value,
+	}
+	ok := kvs.startInCausal(op, in.Vectorclock, in.Timestamp)
+	if !ok {
+		util.DPrintf("PutInCasual: StartInCausal Failed key=%s value=%s, Because vcFromClient < kvs.vectorclock", in.Key, in.Value)
+		putInCausalResponse.Success = false
+	} else {
+		putInCausalResponse.Success = true
+	}
+	putInCausalResponse.Vectorclock = util.BecomeMap(kvs.vectorclock)
+	return putInCausalResponse, nil
 }
 
 func (kvs *KVServer) AppendEntriesInCausal(ctx context.Context, in *causalrpc.AppendEntriesInCausalRequest) (*causalrpc.AppendEntriesInCausalResponse, error) {
-	util.DPrintf("AppendEntriesInCausal")
+	util.DPrintf("AppendEntriesInCausal %v", in)
+	var mlFromOther lattices.MapLattice
+	json.Unmarshal(in.MapLattice, &mlFromOther)
+	vcFromOther := util.BecomeSyncMap(mlFromOther.Vl.VectorClock)
+	ok := util.IsUpper(kvs.vectorclock, vcFromOther)
+	if !ok {
+		// Append the log to the local log
+		kvs.logs = append(kvs.logs, mlFromOther.Vl.Log)
+		kvs.db.Store(mlFromOther.Key, &ValueTimestamp{value: mlFromOther.Vl.Log.Value, timestamp: time.Now().UnixMilli()})
+		kvs.persister.Put(mlFromOther.Key, mlFromOther.Vl.Log.Value)
+	}
 	return &causalrpc.AppendEntriesInCausalResponse{}, nil
 }
 
@@ -133,7 +186,7 @@ func (kvs *KVServer) RegisterCausalServer(address string) {
 
 // s0 --> other servers
 func (kvs *KVServer) sendAppendEntriesInCausal(address string, args *causalrpc.AppendEntriesInCausalRequest) (*causalrpc.AppendEntriesInCausalResponse, bool) {
-	fmt.Println("here is sendAppendEntriesInCausal() ---------> ", address)
+	util.DPrintf("here is sendAppendEntriesInCausal() ---------> ", address)
 	// 随机等待，模拟延迟
 	time.Sleep(time.Millisecond * time.Duration(kvs.latency+rand.Intn(25)))
 	// conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
@@ -161,9 +214,9 @@ func MakeKVServer(peers []string) *KVServer {
 	kvs.persister = new(persister.Persister)
 	kvs.persister.Init("db")
 	kvs.address = config.Address
-	kvs.internalAddress = config.Address + "1"
+	kvs.internalAddress = config.InternalAddress
 	kvs.peers = peers
-	// init vectorclock: { "192.168.10.120:7081":0, "192.168.10.121:7081":0, ... }
+	// init vectorclock: { "192.168.10.120:30881":0, "192.168.10.121:30881":0, ... }
 	for i := 0; i < len(peers); i++ {
 		kvs.vectorclock.Store(peers[i], 0)
 	}

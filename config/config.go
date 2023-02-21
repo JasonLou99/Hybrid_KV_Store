@@ -6,6 +6,8 @@ type Log struct {
 	Value  string
 }
 
-// 对外提供kv服务的地址
-// 首字母大写，表示public
+// Address for KV Service Between Server and Client
 var Address string = "192.168.10.120:3088"
+
+// Address for Internal Communication Between Nodes
+var InternalAddress string = "192.168.10.120:30881"
