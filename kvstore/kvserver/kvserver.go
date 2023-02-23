@@ -4,14 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"hybrid_kv_store/config"
 	"hybrid_kv_store/lattices"
 	"hybrid_kv_store/persister"
 	"hybrid_kv_store/rpc/causalrpc"
 	"hybrid_kv_store/rpc/kvrpc"
 	"hybrid_kv_store/util"
-	"math/rand"
 	"net"
 	"strings"
 	"sync"
@@ -37,6 +35,7 @@ type KVServer struct {
 type ValueTimestamp struct {
 	value     string
 	timestamp int64
+	version   int32
 }
 
 // this method is used to execute the command from client with causal consistency
@@ -44,46 +43,65 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 	vcFromClient := util.BecomeSyncMap(vcFromClientArg)
 	newLog := command.(config.Log)
 	util.DPrintf("Log in Start(): %v ", newLog)
-	util.DPrintf("vcFromClient in Start(): %v", vcFromClient)
+	// util.DPrintf("vcFromClient in Start(): %v", vcFromClient)
 	if newLog.Option == "Put" {
-		isUpper := util.IsUpper(vcFromClient, kvs.vectorclock)
-		if isUpper {
-			vt, ok := kvs.db.Load(newLog.Key)
-			vt2 := vt.(ValueTimestamp)
-			if ok && vt2.timestamp > timestampFromClient {
-				// the value in the db is newer than the value in the client
-				return false
+		/*
+			Put操作中的vectorclock的变更逻辑
+			1. 要求kvs.vectorclock更大，那么就无法让client跨越更新本地数据（即client收到了其它节点更新的数据，无法直接更新旧的副本节点）
+			2. 要求vcFromClient更大，则可能造成一直无法put成功。
+			所以在这里不做vc的要求，而是接收到了put就更新，视情况更新客户端的vc
+		*/
+		vt, ok := kvs.db.Load(newLog.Key)
+		vt2 := &ValueTimestamp{
+			value: "",
+		}
+		if vt == nil {
+			// the key is not in the db
+			vt2 = &ValueTimestamp{
+				value:     "",
+				timestamp: 0,
 			}
-			// update vector clock
-			kvs.vectorclock = vcFromClient
-			val, _ := kvs.vectorclock.Load(kvs.internalAddress)
-			kvs.vectorclock.Store(kvs.internalAddress, val.(int32)+1)
-			// init MapLattice for sending to other nodes
-			ml := lattices.MapLattice{
-				Key: newLog.Key,
-				Vl: lattices.ValueLattice{
-					Log:         newLog,
-					VectorClock: util.BecomeMap(kvs.vectorclock),
-				},
-			}
-			data, _ := json.Marshal(ml)
-			args := &causalrpc.AppendEntriesInCausalRequest{
-				MapLattice: data,
-			}
-			// async sending to other nodes
-			for i := 0; i < len(kvs.peers); i++ {
-				if kvs.peers[i] != kvs.address {
-					go kvs.sendAppendEntriesInCausal(kvs.peers[i], args)
-				}
-			}
-			// update value in the db and persist
-			kvs.logs = append(kvs.logs, newLog)
-			kvs.db.Store(newLog.Key, &ValueTimestamp{value: newLog.Value, timestamp: time.Now().UnixMilli()})
-			kvs.persister.Put(newLog.Key, newLog.Value)
-			return true
 		} else {
+			vt2 = &ValueTimestamp{
+				value:     vt.(*ValueTimestamp).value,
+				timestamp: vt.(*ValueTimestamp).timestamp,
+				version:   vt.(*ValueTimestamp).version,
+			}
+		}
+		oldVersion := vt2.version
+		if ok && vt2.timestamp > timestampFromClient {
+			// the value in the db is newer than the value in the client
+			util.DPrintf("the value in the db is newer than the value in the client")
 			return false
 		}
+		// update vector clock
+		// kvs.vectorclock = vcFromClient
+		// val, _ := kvs.vectorclock.Load(kvs.internalAddress)
+		// kvs.vectorclock.Store(kvs.internalAddress, val.(int32)+1)
+		// init MapLattice for sending to other nodes
+		ml := lattices.MapLattice{
+			Key: newLog.Key,
+			Vl: lattices.ValueLattice{
+				Log:         newLog,
+				VectorClock: util.BecomeMap(kvs.vectorclock),
+			},
+		}
+		data, _ := json.Marshal(ml)
+		args := &causalrpc.AppendEntriesInCausalRequest{
+			MapLattice: data,
+			Version:    oldVersion + 1,
+		}
+		// async sending to other nodes
+		for i := 0; i < len(kvs.peers); i++ {
+			if kvs.peers[i] != kvs.internalAddress {
+				go kvs.sendAppendEntriesInCausal(kvs.peers[i], args)
+			}
+		}
+		// update value in the db and persist
+		kvs.logs = append(kvs.logs, newLog)
+		kvs.db.Store(newLog.Key, &ValueTimestamp{value: newLog.Value, timestamp: time.Now().UnixMilli(), version: oldVersion + 1})
+		kvs.persister.Put(newLog.Key, newLog.Value)
+		return true
 	} else if newLog.Option == "Get" {
 		return util.IsUpper(kvs.vectorclock, vcFromClient)
 	}
@@ -108,7 +126,8 @@ func (kvs *KVServer) GetInCasual(ctx context.Context, in *kvrpc.GetInCasualReque
 			getInCausalResponse.Value = ""
 			getInCausalResponse.Success = false
 		}
-		// getInCausalResponse.Value = string(kvs.persister.Get(in.Key))
+		// only update the client's vectorclock if the value is newer
+		getInCausalResponse.Vectorclock = util.BecomeMap(kvs.vectorclock)
 		getInCausalResponse.Value = valueTimestamp.value
 		getInCausalResponse.Success = true
 	} else {
@@ -127,11 +146,21 @@ func (kvs *KVServer) PutInCasual(ctx context.Context, in *kvrpc.PutInCasualReque
 		Value:  in.Value,
 	}
 	ok := kvs.startInCausal(op, in.Vectorclock, in.Timestamp)
-	if !ok {
+	if ok {
+		isUpper := util.IsUpper(kvs.vectorclock, util.BecomeSyncMap(in.Vectorclock))
+		if isUpper {
+			val, _ := kvs.vectorclock.Load(kvs.internalAddress)
+			kvs.vectorclock.Store(kvs.internalAddress, val.(int32)+1)
+		} else {
+			// vcFromClient is bigger than kvs.vectorclock
+			kvs.vectorclock = util.BecomeSyncMap(in.Vectorclock)
+			val, _ := kvs.vectorclock.Load(kvs.internalAddress)
+			kvs.vectorclock.Store(kvs.internalAddress, val.(int32)+1)
+		}
+		putInCausalResponse.Success = true
+	} else {
 		util.DPrintf("PutInCasual: StartInCausal Failed key=%s value=%s, Because vcFromClient < kvs.vectorclock", in.Key, in.Value)
 		putInCausalResponse.Success = false
-	} else {
-		putInCausalResponse.Success = true
 	}
 	putInCausalResponse.Vectorclock = util.BecomeMap(kvs.vectorclock)
 	return putInCausalResponse, nil
@@ -139,6 +168,7 @@ func (kvs *KVServer) PutInCasual(ctx context.Context, in *kvrpc.PutInCasualReque
 
 func (kvs *KVServer) AppendEntriesInCausal(ctx context.Context, in *causalrpc.AppendEntriesInCausalRequest) (*causalrpc.AppendEntriesInCausalResponse, error) {
 	util.DPrintf("AppendEntriesInCausal %v", in)
+	appendEntriesInCausalResponse := &causalrpc.AppendEntriesInCausalResponse{}
 	var mlFromOther lattices.MapLattice
 	json.Unmarshal(in.MapLattice, &mlFromOther)
 	vcFromOther := util.BecomeSyncMap(mlFromOther.Vl.VectorClock)
@@ -146,10 +176,14 @@ func (kvs *KVServer) AppendEntriesInCausal(ctx context.Context, in *causalrpc.Ap
 	if !ok {
 		// Append the log to the local log
 		kvs.logs = append(kvs.logs, mlFromOther.Vl.Log)
-		kvs.db.Store(mlFromOther.Key, &ValueTimestamp{value: mlFromOther.Vl.Log.Value, timestamp: time.Now().UnixMilli()})
+		kvs.db.Store(mlFromOther.Key, &ValueTimestamp{value: mlFromOther.Vl.Log.Value, timestamp: time.Now().UnixMilli(), version: in.Version})
 		kvs.persister.Put(mlFromOther.Key, mlFromOther.Vl.Log.Value)
+		appendEntriesInCausalResponse.Success = true
+	} else {
+		// Reject the log, Because of vectorclock
+		appendEntriesInCausalResponse.Success = false
 	}
-	return &causalrpc.AppendEntriesInCausalResponse{}, nil
+	return appendEntriesInCausalResponse, nil
 }
 
 func (kvs *KVServer) RegisterKVServer(address string) {
@@ -188,7 +222,7 @@ func (kvs *KVServer) RegisterCausalServer(address string) {
 func (kvs *KVServer) sendAppendEntriesInCausal(address string, args *causalrpc.AppendEntriesInCausalRequest) (*causalrpc.AppendEntriesInCausalResponse, bool) {
 	util.DPrintf("here is sendAppendEntriesInCausal() ---------> ", address)
 	// 随机等待，模拟延迟
-	time.Sleep(time.Millisecond * time.Duration(kvs.latency+rand.Intn(25)))
+	// time.Sleep(time.Millisecond * time.Duration(kvs.latency+rand.Intn(25)))
 	// conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
 	conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
@@ -218,7 +252,7 @@ func MakeKVServer(peers []string) *KVServer {
 	kvs.peers = peers
 	// init vectorclock: { "192.168.10.120:30881":0, "192.168.10.121:30881":0, ... }
 	for i := 0; i < len(peers); i++ {
-		kvs.vectorclock.Store(peers[i], 0)
+		kvs.vectorclock.Store(peers[i], int32(0))
 	}
 	return kvs
 }
@@ -228,7 +262,6 @@ func main() {
 	var peers_arg = flag.String("peers", "", "Input Your Peers")
 	flag.Parse()
 	peers := strings.Split(*peers_arg, ",")
-	fmt.Println(peers)
 	kvs := MakeKVServer(peers)
 	go kvs.RegisterKVServer(kvs.address)
 	go kvs.RegisterCausalServer(kvs.internalAddress)

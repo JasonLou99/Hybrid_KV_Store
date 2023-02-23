@@ -51,7 +51,7 @@ func Len(vc sync.Map) int {
 }
 func BecomeMap(vc sync.Map) map[string]int32 {
 	res := map[string]int32{}
-	vc.Range(func(key, value interface{}) bool {
+	vc.Range(func(key, value any) bool {
 		res[key.(string)] = value.(int32)
 		return true
 	})
@@ -66,20 +66,20 @@ func BecomeSyncMap(argMap map[string]int32) sync.Map {
 }
 
 // 判断vectorClock是否更大（key都有，并且value>=other.value）
-func IsUpper(vectorClock sync.Map, vc sync.Map) bool {
-	DPrintf("IsUpper(): vectorClock: %v, arg_vc: %v", BecomeMap(vectorClock), BecomeMap(vc))
-	if Len(vc) == 0 {
+func IsUpper(vectorClock sync.Map, arg_vc sync.Map) bool {
+	DPrintf("IsUpper(): vectorClock: %v, arg_vc: %v", BecomeMap(vectorClock), BecomeMap(arg_vc))
+	if Len(arg_vc) == 0 {
 		return true
 	}
-	if Len(vectorClock) < Len(vc) {
+	if Len(vectorClock) < Len(arg_vc) {
 		DPrintf("vectorClock's length is shorter")
 		return false
 	} else {
 		res := true
-		vc.Range(func(k, v interface{}) bool {
-			value, ok := vectorClock.Load(k)
+		vectorClock.Range(func(k, v interface{}) bool {
+			value, ok := arg_vc.Load(k)
 			if ok {
-				if v.(int32) <= value.(int32) {
+				if v.(int32) >= value.(int32) {
 					return true
 				} else {
 					res = false
@@ -94,4 +94,13 @@ func IsUpper(vectorClock sync.Map, vc sync.Map) bool {
 		})
 		return res
 	}
+}
+
+/* Map相关 */
+func MakeMap(addresses []string) map[string]int32 {
+	res := make(map[string]int32)
+	for _, address := range addresses {
+		res[address+"1"] = 0
+	}
+	return res
 }
