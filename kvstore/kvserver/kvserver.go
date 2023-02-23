@@ -47,9 +47,10 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 	if newLog.Option == "Put" {
 		/*
 			Put操作中的vectorclock的变更逻辑
-			1. 要求kvs.vectorclock更大，那么就无法让client跨越更新本地数据（即client收到了其它节点更新的数据，无法直接更新旧的副本节点）
-			2. 要求vcFromClient更大，则可能造成一直无法put成功。
-			所以在这里不做vc的要求，而是接收到了put就更新，视情况更新客户端的vc
+			1. 如果要求kvs.vectorclock更大，那么就无法让client跨越更新本地数据（即client收到了其它节点更新的数据，无法直接更新旧的副本节点）
+			2. 如果要求vcFromClient更大，则可能造成一直无法put成功。需要副本节点返回vectorclock更新客户端。
+			方案2会造成Put错误重试，额外需要一个RTT；同时考虑到更新vc之后，客户端依然是进行错误重试，也就是向副本节点写入上次尝试写入的值。
+			所以在这里索性不做vc的要求，而是接收到了put就更新，再视情况更新客户端和本地的vc，直接就减少了错误重试的次数。
 		*/
 		vt, ok := kvs.db.Load(newLog.Key)
 		vt2 := &ValueTimestamp{
