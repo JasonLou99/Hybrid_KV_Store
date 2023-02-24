@@ -105,7 +105,7 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 		return true
 	} else if newLog.Option == "Get" {
 		vcKVS, _ := kvs.vectorclock.Load(kvs.internalAddress)
-		vcKVC, _ := kvs.vectorclock.Load(kvs.internalAddress)
+		vcKVC, _ := vcFromClient.Load(kvs.internalAddress)
 		return vcKVS.(int32) >= vcKVC.(int32)
 		// return util.IsUpper(kvs.vectorclock, vcFromClient)
 	}
