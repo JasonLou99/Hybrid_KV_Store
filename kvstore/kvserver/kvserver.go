@@ -79,6 +79,16 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 		// kvs.vectorclock = vcFromClient
 		// val, _ := kvs.vectorclock.Load(kvs.internalAddress)
 		// kvs.vectorclock.Store(kvs.internalAddress, val.(int32)+1)
+		isUpper := util.IsUpper(kvs.vectorclock, vcFromClient)
+		if isUpper {
+			val, _ := kvs.vectorclock.Load(kvs.internalAddress)
+			kvs.vectorclock.Store(kvs.internalAddress, val.(int32)+1)
+		} else {
+			// vcFromClient is bigger than kvs.vectorclock
+			kvs.MergeVC(vcFromClient)
+			val, _ := kvs.vectorclock.Load(kvs.internalAddress)
+			kvs.vectorclock.Store(kvs.internalAddress, val.(int32)+1)
+		}
 		// init MapLattice for sending to other nodes
 		ml := lattices.MapLattice{
 			Key: newLog.Key,
@@ -156,16 +166,6 @@ func (kvs *KVServer) PutInCasual(ctx context.Context, in *kvrpc.PutInCasualReque
 	}
 	ok := kvs.startInCausal(op, in.Vectorclock, in.Timestamp)
 	if ok {
-		isUpper := util.IsUpper(kvs.vectorclock, util.BecomeSyncMap(in.Vectorclock))
-		if isUpper {
-			val, _ := kvs.vectorclock.Load(kvs.internalAddress)
-			kvs.vectorclock.Store(kvs.internalAddress, val.(int32)+1)
-		} else {
-			// vcFromClient is bigger than kvs.vectorclock
-			kvs.vectorclock = util.BecomeSyncMap(in.Vectorclock)
-			val, _ := kvs.vectorclock.Load(kvs.internalAddress)
-			kvs.vectorclock.Store(kvs.internalAddress, val.(int32)+1)
-		}
 		putInCausalResponse.Success = true
 	} else {
 		util.DPrintf("PutInCasual: StartInCausal Failed key=%s value=%s, Because vcFromClient < kvs.vectorclock", in.Key, in.Value)
@@ -249,6 +249,20 @@ func (kvs *KVServer) sendAppendEntriesInCausal(address string, args *causalrpc.A
 		return reply, false
 	}
 	return reply, true
+}
+
+func (kvs *KVServer) MergeVC(vc sync.Map) {
+	vc.Range(func(k, v interface{}) bool {
+		val, ok := kvs.vectorclock.Load(k)
+		if !ok {
+			kvs.vectorclock.Store(k, v)
+		} else {
+			if v.(int32) > val.(int32) {
+				kvs.vectorclock.Store(k, v)
+			}
+		}
+		return true
+	})
 }
 
 func MakeKVServer(address string, internalAddress string, peers []string) *KVServer {
