@@ -104,7 +104,10 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 		kvs.persister.Put(newLog.Key, newLog.Value)
 		return true
 	} else if newLog.Option == "Get" {
-		return util.IsUpper(kvs.vectorclock, vcFromClient)
+		vcKVS, _ := kvs.vectorclock.Load(kvs.internalAddress)
+		vcKVC, _ := kvs.vectorclock.Load(kvs.internalAddress)
+		return vcKVS.(int32) >= vcKVC.(int32)
+		// return util.IsUpper(kvs.vectorclock, vcFromClient)
 	}
 	util.DPrintf("here is Start() in Causal: log command option is false")
 	return false
