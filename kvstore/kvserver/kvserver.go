@@ -121,6 +121,11 @@ func (kvs *KVServer) GetInCasual(ctx context.Context, in *kvrpc.GetInCasualReque
 	ok := kvs.startInCausal(op, in.Vectorclock, in.Timestamp)
 	if ok {
 		vt, _ := kvs.db.Load(in.Key)
+		if vt == nil {
+			getInCausalResponse.Value = ""
+			getInCausalResponse.Success = false
+			return getInCausalResponse, nil
+		}
 		valueTimestamp := vt.(*ValueTimestamp)
 		// compare timestamp
 		if valueTimestamp.timestamp > in.Timestamp {
