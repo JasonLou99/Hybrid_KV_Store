@@ -187,6 +187,7 @@ func (kvs *KVServer) AppendEntriesInCausal(ctx context.Context, in *causalrpc.Ap
 		kvs.logs = append(kvs.logs, mlFromOther.Vl.Log)
 		kvs.db.Store(mlFromOther.Key, &ValueTimestamp{value: mlFromOther.Vl.Log.Value, timestamp: time.Now().UnixMilli(), version: in.Version})
 		kvs.persister.Put(mlFromOther.Key, mlFromOther.Vl.Log.Value)
+		kvs.MergeVC(vcFromOther)
 		appendEntriesInCausalResponse.Success = true
 	} else {
 		// Reject the log, Because of vectorclock
