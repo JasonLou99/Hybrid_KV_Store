@@ -243,13 +243,13 @@ func (kvs *KVServer) sendAppendEntriesInCausal(address string, args *causalrpc.A
 	return reply, true
 }
 
-func MakeKVServer(peers []string) *KVServer {
+func MakeKVServer(address string, internalAddress string, peers []string) *KVServer {
 	util.IPrintf("Make KVServer %s... ", config.Address)
 	kvs := new(KVServer)
 	kvs.persister = new(persister.Persister)
 	kvs.persister.Init("db")
-	kvs.address = config.Address
-	kvs.internalAddress = config.InternalAddress
+	kvs.address = address
+	kvs.internalAddress = internalAddress
 	kvs.peers = peers
 	// init vectorclock: { "192.168.10.120:30881":0, "192.168.10.121:30881":0, ... }
 	for i := 0; i < len(peers); i++ {
@@ -260,10 +260,14 @@ func MakeKVServer(peers []string) *KVServer {
 
 func main() {
 	// peers inputed by command line
+	var internalAddress_arg = flag.String("internalAddress", "", "Input Your address")
+	var address_arg = flag.String("address", "", "Input Your address")
 	var peers_arg = flag.String("peers", "", "Input Your Peers")
 	flag.Parse()
+	internalAddress := *internalAddress_arg
+	address := *address_arg
 	peers := strings.Split(*peers_arg, ",")
-	kvs := MakeKVServer(peers)
+	kvs := MakeKVServer(address, internalAddress, peers)
 	go kvs.RegisterKVServer(kvs.address)
 	go kvs.RegisterCausalServer(kvs.internalAddress)
 	// server run for 20min
