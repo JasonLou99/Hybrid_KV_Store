@@ -97,6 +97,7 @@ func (kvc *KVClient) GetInCausal(key string) (string, bool) {
 		// refresh the target node
 		util.DPrintf("GetInCausal Failed, refresh the target node: %v", kvc.kvservers[kvc.kvsId])
 		kvc.kvsId = (kvc.kvsId + 1) % len(kvc.kvservers)
+		atomic.AddInt32(&falseTime, 1)
 	}
 }
 
@@ -164,6 +165,7 @@ func (kvc *KVClient) PutInCausal(key string, value string) bool {
 var count int32 = 0
 var putCount int32 = 0
 var getCount int32 = 0
+var falseTime int32 = 0
 
 // Test the consistency performance at different read/write ratios
 func RequestRatio(cnum int, num int, servers []string, getRatio int, consistencyLevel int) {
@@ -190,7 +192,7 @@ func RequestRatio(cnum int, num int, servers []string, getRatio int, consistency
 		for j := 0; j < getRatio; j++ {
 			// 读操作
 			k := "key" + strconv.Itoa(key)
-			v, _ := kvc.GetInCausal(k)
+			v, _ := kvc.GetInCausalWithQuorum(k)
 			// if GetInCausal return, it must be success
 			atomic.AddInt32(&getCount, 1)
 			atomic.AddInt32(&count, 1)
@@ -198,16 +200,15 @@ func RequestRatio(cnum int, num int, servers []string, getRatio int, consistency
 				// 查询出了值就输出，屏蔽请求非Leader的情况
 				// util.DPrintf("TestCount: ", count, ",Get ", k, ": ", ck.Get(k))
 				util.DPrintf("TestCount: %v ,Get %v: %v, VectorClock: %v, getCount: %v, putCount: %v", count, k, v, kvc.vectorclock, getCount, putCount)
-				util.DPrintf("spent: %v", time.Since(start_time))
+				// util.DPrintf("spent: %v", time.Since(start_time))
 			}
-		}
-
-		if int(count) == num*cnum {
-			util.DPrintf("Task is completed, spent: %v", time.Since(start_time))
 		}
 		// 随机切换下一个节点
 		kvc.kvsId = rand.Intn(len(kvc.kvservers)+10) % len(kvc.kvservers)
-
+	}
+	if int(count) == num*cnum*(getRatio+1) {
+		util.DPrintf("Task is completed, spent: %v", time.Since(start_time))
+		util.DPrintf("falseTimes: %v", falseTime)
 	}
 }
 
