@@ -111,7 +111,7 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 		// update value in the db and persist
 		kvs.logs = append(kvs.logs, newLog)
 		kvs.db.Store(newLog.Key, &ValueTimestamp{value: newLog.Value, timestamp: time.Now().UnixMilli(), version: oldVersion + 1})
-		kvs.persister.Put(newLog.Key, newLog.Value)
+		// kvs.persister.Put(newLog.Key, newLog.Value)
 		return true
 	} else if newLog.Option == "Get" {
 		vcKVS, _ := kvs.vectorclock.Load(kvs.internalAddress)
@@ -186,7 +186,7 @@ func (kvs *KVServer) AppendEntriesInCausal(ctx context.Context, in *causalrpc.Ap
 		// Append the log to the local log
 		kvs.logs = append(kvs.logs, mlFromOther.Vl.Log)
 		kvs.db.Store(mlFromOther.Key, &ValueTimestamp{value: mlFromOther.Vl.Log.Value, timestamp: time.Now().UnixMilli(), version: in.Version})
-		kvs.persister.Put(mlFromOther.Key, mlFromOther.Vl.Log.Value)
+		// kvs.persister.Put(mlFromOther.Key, mlFromOther.Vl.Log.Value)
 		kvs.MergeVC(vcFromOther)
 		appendEntriesInCausalResponse.Success = true
 	} else {
