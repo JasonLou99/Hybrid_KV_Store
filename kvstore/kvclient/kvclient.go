@@ -171,7 +171,7 @@ var falseTime int32 = 0
 
 // Test the consistency performance at different read/write ratios
 func RequestRatio(cnum int, num int, servers []string, getRatio int, consistencyLevel int) {
-	fmt.Println("servers: ", servers)
+	fmt.Printf("servers: %v", servers)
 	kvc := KVClient{
 		kvservers:   make([]string, len(servers)),
 		vectorclock: make(map[string]int32),
