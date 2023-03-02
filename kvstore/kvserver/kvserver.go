@@ -28,7 +28,7 @@ type KVServer struct {
 	logs            []config.Log
 	vectorclock     sync.Map
 	persister       *persister.Persister
-	db              sync.Map // memory database
+	// db              sync.Map // memory database
 	// causalEntity *causal.CausalEntity
 }
 
@@ -52,7 +52,7 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 			方案2会造成Put错误重试，额外需要一个RTT；同时考虑到更新vc之后，客户端依然是进行错误重试，也就是向副本节点写入上次尝试写入的值。
 			所以在这里索性不做vc的要求，而是接收到了put就更新，再视情况更新客户端和本地的vc，直接就减少了错误重试的次数。
 		*/
-		vt, ok := kvs.db.Load(newLog.Key)
+		/* vt, ok := kvs.db.Load(newLog.Key)
 		vt2 := &ValueTimestamp{
 			value: "",
 		}
@@ -74,7 +74,7 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 			// the value in the db is newer than the value in the client
 			util.DPrintf("the value in the db is newer than the value in the client")
 			return false
-		}
+		} */
 		// update vector clock
 		// kvs.vectorclock = vcFromClient
 		// val, _ := kvs.vectorclock.Load(kvs.internalAddress)
@@ -100,7 +100,8 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 		data, _ := json.Marshal(ml)
 		args := &causalrpc.AppendEntriesInCausalRequest{
 			MapLattice: data,
-			Version:    oldVersion + 1,
+			// Version:    oldVersion + 1,
+			Version: 1,
 		}
 		// async sending to other nodes
 		for i := 0; i < len(kvs.peers); i++ {
@@ -110,8 +111,8 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 		}
 		// update value in the db and persist
 		kvs.logs = append(kvs.logs, newLog)
-		kvs.db.Store(newLog.Key, &ValueTimestamp{value: newLog.Value, timestamp: time.Now().UnixMilli(), version: oldVersion + 1})
-		// kvs.persister.Put(newLog.Key, newLog.Value)
+		// kvs.db.Store(newLog.Key, &ValueTimestamp{value: newLog.Value, timestamp: time.Now().UnixMilli(), version: oldVersion + 1})
+		kvs.persister.Put(newLog.Key, newLog.Value)
 		return true
 	} else if newLog.Option == "Get" {
 		vcKVS, _ := kvs.vectorclock.Load(kvs.internalAddress)
@@ -133,7 +134,7 @@ func (kvs *KVServer) GetInCasual(ctx context.Context, in *kvrpc.GetInCasualReque
 	}
 	ok := kvs.startInCausal(op, in.Vectorclock, in.Timestamp)
 	if ok {
-		vt, _ := kvs.db.Load(in.Key)
+		/* vt, _ := kvs.db.Load(in.Key)
 		if vt == nil {
 			getInCausalResponse.Value = ""
 			getInCausalResponse.Success = false
@@ -144,10 +145,11 @@ func (kvs *KVServer) GetInCasual(ctx context.Context, in *kvrpc.GetInCasualReque
 		if valueTimestamp.timestamp > in.Timestamp {
 			getInCausalResponse.Value = ""
 			getInCausalResponse.Success = false
-		}
+		} */
 		// only update the client's vectorclock if the value is newer
 		getInCausalResponse.Vectorclock = util.BecomeMap(kvs.vectorclock)
-		getInCausalResponse.Value = valueTimestamp.value
+		// getInCausalResponse.Value = valueTimestamp.value
+		getInCausalResponse.Value = string(kvs.persister.Get(in.Key))
 		getInCausalResponse.Success = true
 	} else {
 		getInCausalResponse.Value = ""
@@ -185,8 +187,8 @@ func (kvs *KVServer) AppendEntriesInCausal(ctx context.Context, in *causalrpc.Ap
 	if !ok {
 		// Append the log to the local log
 		kvs.logs = append(kvs.logs, mlFromOther.Vl.Log)
-		kvs.db.Store(mlFromOther.Key, &ValueTimestamp{value: mlFromOther.Vl.Log.Value, timestamp: time.Now().UnixMilli(), version: in.Version})
-		// kvs.persister.Put(mlFromOther.Key, mlFromOther.Vl.Log.Value)
+		// kvs.db.Store(mlFromOther.Key, &ValueTimestamp{value: mlFromOther.Vl.Log.Value, timestamp: time.Now().UnixMilli(), version: in.Version})
+		kvs.persister.Put(mlFromOther.Key, mlFromOther.Vl.Log.Value)
 		kvs.MergeVC(vcFromOther)
 		appendEntriesInCausalResponse.Success = true
 	} else {
