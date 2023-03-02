@@ -207,8 +207,8 @@ func RequestRatio(cnum int, num int, servers []string, getRatio int, consistency
 		kvc.kvsId = rand.Intn(len(kvc.kvservers)+10) % len(kvc.kvservers)
 	}
 	if int(count) == num*cnum*(getRatio+1) {
-		util.DPrintf("Task is completed, spent: %v", time.Since(start_time))
-		util.DPrintf("falseTimes: %v", falseTime)
+		fmt.Printf("Task is completed, spent: %v", time.Since(start_time))
+		fmt.Printf("falseTimes: %v", falseTime)
 	}
 }
 
