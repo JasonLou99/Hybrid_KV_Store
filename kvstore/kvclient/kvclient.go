@@ -194,7 +194,7 @@ func RequestRatio(cnum int, num int, servers []string, getRatio int, consistency
 		for j := 0; j < getRatio; j++ {
 			// 读操作
 			k := "key" + strconv.Itoa(key)
-			v, _ := kvc.GetInCausal(k)
+			v, _ := kvc.GetInCausalWithQuorum(k)
 			// if GetInCausal return, it must be success
 			atomic.AddInt32(&getCount, 1)
 			atomic.AddInt32(&count, 1)
