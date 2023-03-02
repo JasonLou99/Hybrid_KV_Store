@@ -171,7 +171,7 @@ var falseTime int32 = 0
 
 // Test the consistency performance at different read/write ratios
 func RequestRatio(cnum int, num int, servers []string, getRatio int, consistencyLevel int) {
-	fmt.Printf("servers: %v", servers)
+	fmt.Printf("servers: %v\n", servers)
 	kvc := KVClient{
 		kvservers:   make([]string, len(servers)),
 		vectorclock: make(map[string]int32),
@@ -208,10 +208,10 @@ func RequestRatio(cnum int, num int, servers []string, getRatio int, consistency
 		// 随机切换下一个节点
 		kvc.kvsId = rand.Intn(len(kvc.kvservers)+10) % len(kvc.kvservers)
 	}
-	fmt.Printf("TestCount: %v, VectorClock: %v, getCount: %v, putCount: %v", count, kvc.vectorclock, getCount, putCount)
+	fmt.Printf("TestCount: %v, VectorClock: %v, getCount: %v, putCount: %v\n", count, kvc.vectorclock, getCount, putCount)
 	if int(count) == num*cnum*(getRatio+1) {
-		fmt.Printf("Task is completed, spent: %v", time.Since(start_time))
-		fmt.Printf("falseTimes: %v", falseTime)
+		fmt.Printf("Task is completed, spent: %v\n", time.Since(start_time))
+		fmt.Printf("falseTimes: %v\n", falseTime)
 	}
 }
 
