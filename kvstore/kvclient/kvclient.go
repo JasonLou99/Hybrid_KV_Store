@@ -95,7 +95,8 @@ func (kvc *KVClient) GetInCausal(key string) (string, bool) {
 			return reply.Value, reply.Success
 		}
 		// refresh the target node
-		util.DPrintf("GetInCausal Failed, refresh the target node: %v", kvc.kvservers[kvc.kvsId])
+		// util.DPrintf("GetInCausal Failed, refresh the target node: %v", kvc.kvservers[kvc.kvsId])
+		fmt.Println("GetInCausal Failed, refresh the target node: ", kvc.kvservers[kvc.kvsId])
 		kvc.kvsId = (kvc.kvsId + 1) % len(kvc.kvservers)
 		atomic.AddInt32(&falseTime, 1)
 	}
