@@ -157,7 +157,8 @@ func (kvc *KVClient) PutInCausal(key string, value string) bool {
 		}
 		// PutInCausal Failed
 		// refresh the target node
-		util.DPrintf("PutInCausal Failed, refresh the target node")
+		// util.DPrintf("PutInCausal Failed, refresh the target node")
+		fmt.Printf("PutInCausal Failed, refresh the target node")
 		kvc.kvsId = (kvc.kvsId + 1) % len(kvc.kvservers)
 	}
 }
@@ -206,6 +207,7 @@ func RequestRatio(cnum int, num int, servers []string, getRatio int, consistency
 		// 随机切换下一个节点
 		kvc.kvsId = rand.Intn(len(kvc.kvservers)+10) % len(kvc.kvservers)
 	}
+	fmt.Printf("TestCount: %v, VectorClock: %v, getCount: %v, putCount: %v", count, kvc.vectorclock, getCount, putCount)
 	if int(count) == num*cnum*(getRatio+1) {
 		fmt.Printf("Task is completed, spent: %v", time.Since(start_time))
 		fmt.Printf("falseTimes: %v", falseTime)
