@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
@@ -28,6 +29,8 @@ type KVServer struct {
 	logs            []config.Log
 	vectorclock     sync.Map
 	persister       *persister.Persister
+	memdb           *redis.Client
+	ctx             context.Context
 	// db              sync.Map // memory database
 	// causalEntity *causal.CausalEntity
 }
@@ -112,7 +115,11 @@ func (kvs *KVServer) startInCausal(command interface{}, vcFromClientArg map[stri
 		// update value in the db and persist
 		kvs.logs = append(kvs.logs, newLog)
 		// kvs.db.Store(newLog.Key, &ValueTimestamp{value: newLog.Value, timestamp: time.Now().UnixMilli(), version: oldVersion + 1})
-		kvs.persister.Put(newLog.Key, newLog.Value)
+		// kvs.persister.Put(newLog.Key, newLog.Value)
+		err := kvs.memdb.Set(kvs.ctx, newLog.Key, newLog.Value, 0).Err()
+		if err != nil {
+			panic(err)
+		}
 		return true
 	} else if newLog.Option == "Get" {
 		vcKVS, _ := kvs.vectorclock.Load(kvs.internalAddress)
@@ -149,7 +156,12 @@ func (kvs *KVServer) GetInCasual(ctx context.Context, in *kvrpc.GetInCasualReque
 		// only update the client's vectorclock if the value is newer
 		getInCausalResponse.Vectorclock = util.BecomeMap(kvs.vectorclock)
 		// getInCausalResponse.Value = valueTimestamp.value
-		getInCausalResponse.Value = string(kvs.persister.Get(in.Key))
+		// getInCausalResponse.Value = string(kvs.persister.Get(in.Key))
+		val, err := kvs.memdb.Get(kvs.ctx, in.Key).Result()
+		if err != nil {
+			panic(err)
+		}
+		getInCausalResponse.Value = string(val)
 		getInCausalResponse.Success = true
 	} else {
 		getInCausalResponse.Value = ""
@@ -280,6 +292,13 @@ func MakeKVServer(address string, internalAddress string, peers []string) *KVSer
 	for i := 0; i < len(peers); i++ {
 		kvs.vectorclock.Store(peers[i], int32(0))
 	}
+	// init memdb(redis)
+	kvs.memdb = redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+	kvs.ctx = context.Background()
 	return kvs
 }
 
