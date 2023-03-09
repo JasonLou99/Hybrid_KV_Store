@@ -227,7 +227,7 @@ func main() {
 	var onums = flag.String("onums", "1", "Client Requests Times")
 	var getratio = flag.String("getratio", "1", "Get Times per Put Times")
 	var cLevel = flag.Int("consistencyLevel", CAUSAL, "Consistency Level")
-	var quorumArg = flag.Int("quorum or not", 0, "Consistency Level")
+	var quorumArg = flag.Int("quorum", 0, "Quorum Read")
 	flag.Parse()
 	servers := strings.Split(*ser, ",")
 	clientNumm, _ := strconv.Atoi(*cnums)
