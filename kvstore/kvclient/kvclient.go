@@ -170,7 +170,7 @@ var getCount int32 = 0
 var falseTime int32 = 0
 
 // Test the consistency performance at different read/write ratios
-func RequestRatio(cnum int, num int, servers []string, getRatio int, consistencyLevel int) {
+func RequestRatio(cnum int, num int, servers []string, getRatio int, consistencyLevel int, quorum int) {
 	fmt.Printf("servers: %v\n", servers)
 	kvc := KVClient{
 		kvservers:   make([]string, len(servers)),
@@ -194,7 +194,12 @@ func RequestRatio(cnum int, num int, servers []string, getRatio int, consistency
 		for j := 0; j < getRatio; j++ {
 			// 读操作
 			k := "key" + strconv.Itoa(key)
-			v, _ := kvc.GetInCausalWithQuorum(k)
+			var v string
+			if quorum == 1 {
+				v, _ = kvc.GetInCausalWithQuorum(k)
+			} else {
+				v, _ = kvc.GetInCausal(k)
+			}
 			// if GetInCausal return, it must be success
 			atomic.AddInt32(&getCount, 1)
 			atomic.AddInt32(&count, 1)
@@ -222,12 +227,14 @@ func main() {
 	var onums = flag.String("onums", "1", "Client Requests Times")
 	var getratio = flag.String("getratio", "1", "Get Times per Put Times")
 	var cLevel = flag.Int("consistencyLevel", CAUSAL, "Consistency Level")
+	var quorumArg = flag.Int("quorum or not", 0, "Consistency Level")
 	flag.Parse()
 	servers := strings.Split(*ser, ",")
 	clientNumm, _ := strconv.Atoi(*cnums)
 	optionNumm, _ := strconv.Atoi(*onums)
 	getRatio, _ := strconv.Atoi(*getratio)
 	consistencyLevel := int(*cLevel)
+	quorum := int(*quorumArg)
 
 	if clientNumm == 0 {
 		fmt.Println("### Don't forget input -cnum's value ! ###")
@@ -241,7 +248,7 @@ func main() {
 	// Request Times = clientNumm * optionNumm
 	if *mode == "RequestRatio" {
 		for i := 0; i < clientNumm; i++ {
-			go RequestRatio(clientNumm, optionNumm, servers, getRatio, consistencyLevel)
+			go RequestRatio(clientNumm, optionNumm, servers, getRatio, consistencyLevel, quorum)
 		}
 	} else {
 		fmt.Println("### Wrong Mode ! ###")
