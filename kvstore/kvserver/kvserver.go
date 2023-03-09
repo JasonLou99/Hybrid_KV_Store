@@ -159,7 +159,10 @@ func (kvs *KVServer) GetInCasual(ctx context.Context, in *kvrpc.GetInCasualReque
 		// getInCausalResponse.Value = string(kvs.persister.Get(in.Key))
 		val, err := kvs.memdb.Get(kvs.ctx, in.Key).Result()
 		if err != nil {
-			panic(err)
+			util.EPrintf(err.Error())
+			getInCausalResponse.Value = ""
+			getInCausalResponse.Success = false
+			return getInCausalResponse, nil
 		}
 		getInCausalResponse.Value = string(val)
 		getInCausalResponse.Success = true
